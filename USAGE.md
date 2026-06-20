@@ -89,20 +89,167 @@ command — just called from different parser contexts.
 ## Set Subcommand Reference
 
 All of these take effect immediately and are saved for the current session.
+Use `set show` to print current values. Use `set <param> ?` for inline help.
 
-| Setting | Values | Notes |
-|---------|--------|-------|
-| `interface <name>` | `dumb`, `br_l0`, `br_l1`, `scl`, `elm`, `me` | Use `set interface ?` to list available drivers |
-| `port <port>` | `\\.\COM19` (Win), `/dev/ttyUSB0` (Linux) | Serial port for K-line adapter |
-| `dumbopts <hex>` | `0x48` | Required for most dumb K-line adapters; sets timing options |
-| `l1protocol <name>` | `ISO9141`, `ISO14230`, `J1850-VPW`, `J1850-PWM`, `CAN`, `RAW` | Hardware (physical layer) protocol. For Nissan K-line use `ISO14230`. Usually auto-selected by the L2 protocol choice; only set explicitly when troubleshooting. |
-| `l2protocol <name>` | `iso14230`, `raw`, `iso9141`, `j1850-vpw`, `j1850-pwm` | Software protocol. **Must be `iso14230` for Nissan ECU commands.** Use `set l2protocol ?` to list compiled-in choices. |
-| `initmode <mode>` | `fast`, `5baud`, `carb` | ISO 14230 bus init sequence. `fast` (0xC1 0x33 0xF1) is correct for Nissan MEC07. |
-| `testerid <hex>` | `0xfc` | Source address sent in K-line frames (tester ID). `0xfc` is standard. |
-| `destaddr <hex>` | `0x10` | ECU destination address. `0x10` for Nissan powertrain ECUs. |
-| `addrtype <type>` | `phys`, `func` | Physical addressing targets one ECU; functional broadcasts. Use `phys`. |
-| `speed <baud>` | `62500` | Comms baud rate. Only change for kernel reconnect after crash (see below). |
-| `show` | — | Print all current settings. |
+---
+
+### `interface` — hardware driver
+
+| Name | Hardware | Notes |
+|------|----------|-------|
+| `DUMB` | Any dumb serial K-line cable (optocoupler, FT232, CP2102, CH340, etc.) | **Use this for all Nissan K-line work.** Anything that is NOT an ELM327 is probably DUMB. |
+| `ELM` | ELM327-based adapters | Smart interpreted adapter. Very slow; flash/dump not supported. |
+| `BR1` | B. Roadman BR-1 interface | Dedicated KWP2000 hardware; supports J1850/ISO9141/ISO14230. |
+| `MET16` | Multiplex Engineering T16 | Multi-protocol lab interface. |
+| `DUMBT` | Dumb interface test/debug driver | Not for ECU comms — use `debug l0test` for signal checks. |
+
+> **Rule of thumb:** if your cable has no chip other than a USB-serial bridge, use `DUMB`. If it has an
+> ELM327 chip (check the listing or PCB), use `ELM`. When in doubt, `DUMB` is almost always correct.
+
+---
+
+### `dumbopts` — dumb adapter option flags
+
+`dumbopts` is a bitmask — add the values of the options you need.
+
+| Flag | Value | Description |
+|------|-------|-------------|
+| `USE_LLINE` | `0x01` | Drive the L-line (RTS pin) during 5-baud init. Only needed for adapters that expose an L-line, e.g. some VAG-type cables. |
+| `CLEAR_DTR` | `0x02` | Hold DTR low (negative voltage) continuously. Unusual; default is DTR high. |
+| `SET_RTS` | `0x04` | Hold RTS high (positive voltage) continuously. Unusual. Do not combine with `USE_LLINE`. |
+| `MAN_BREAK` | `0x08` | Force software-bitbanged 5bps break pulses. **Essential for USB-serial adapters** (CP2102, CH340, FT232). |
+| `LLINE_INV` | `0x10` | Invert L-line polarity. Only used with `USE_LLINE`; very rare. |
+| `FAST_BREAK` | `0x20` | Alternate fast-init: send `0x00` at 360bps (≈25ms) instead of a hardware break. Try this if `initmode fast` fails with your adapter. |
+| `BLOCKDUPLEX` | `0x40` | Remove echoed bytes at the message level (half-duplex cleanup when P4=0). |
+
+**Common combinations:**
+
+| Value | Flags | When to use |
+|-------|-------|-------------|
+| `0x48` | `MAN_BREAK \| BLOCKDUPLEX` | **Default.** Works for virtually all USB K-line cables with fast init. Start here. |
+| `0x49` | `MAN_BREAK \| BLOCKDUPLEX \| USE_LLINE` | Cable has an L-line that must be driven during init (some VAGtool clones). |
+| `0x68` | `MAN_BREAK \| BLOCKDUPLEX \| FAST_BREAK` | Fast init fails with `0x48`; try alternate break method. |
+| `0x08` | `MAN_BREAK` only | Half-duplex not needed (full-duplex adapter). |
+
+**How to figure out what you need:**
+1. Start with `0x48` — this is correct for the vast majority of USB K-line cables.
+2. If `nc` fails with framing errors or no response, try `0x68` (alternate fast break).
+3. If you have a cable with a separate L-line wire (some older VAGtool types), add `0x01` (`0x49`).
+4. Use `debug l0test` (via `set interface DUMBT`) to send test pulses and verify adapter behaviour
+   before connecting to the car.
+
+---
+
+### `l1protocol` — physical layer
+
+Selects which hardware framing the adapter uses on the wire. For Nissan K-line
+work this is almost always auto-selected by the L2 protocol — you do not normally
+need to set this. Set it explicitly only when troubleshooting.
+
+| Value | Description |
+|-------|-------------|
+| `ISO9141` | ISO 9141 physical framing (UART at 10400 bps). Used with older ECUs and 5-baud init. |
+| `ISO14230` | KWP2000 physical framing (same UART as 9141, different init and headers). **Correct for Nissan MEC07 K-line.** |
+| `J1850-VPW` | SAE J1850 Variable Pulse Width — used on pre-2003 GM/Chrysler. Not Nissan. |
+| `J1850-PWM` | SAE J1850 Pulse Width Modulation — used on pre-2003 Ford. Not Nissan. |
+| `CAN` | ISO 15765 CAN bus. Not used with nisprog (K-line tool only). |
+| `RAW` | Raw byte passthrough — no framing. Used for Subaru SSM (`l2protocol raw`). |
+
+---
+
+### `l2protocol` — software/framing layer
+
+Selects the protocol dialect used for packet framing and service requests. This
+must match what the ECU expects. Use `set l2protocol ?` to list protocols compiled
+into your binary.
+
+| Value | Description |
+|-------|-------------|
+| `iso14230` | KWP2000 (ISO 14230-4). **Required for all Nissan ECU commands.** Provides security access (SID 27/36), ReadMemoryByAddress (SID AC), and the service layer that `gk`, `nc`, `flrom`, etc. depend on. |
+| `raw` | Raw L1 passthrough — no L2 framing. Required for Subaru SSM (`ssmprog.ini`). |
+| `iso9141` | ISO 9141-2 — older OBD-II protocol, no security access SID. Read-only diagnostics only. |
+
+---
+
+### `initmode` — bus wake-up sequence
+
+Controls how nisprog wakes up the ECU on the K-line before sending any requests.
+
+| Value | Description |
+|-------|-------------|
+| `fast` | **ISO 14230 fast init.** Pulls K-line low for 25ms then releases for 25ms, followed by StartCommunications (0xC1 0x33 0xF1). Fast, reliable. **Correct for Nissan MEC07 and most modern Nissan ECUs.** |
+| `5baud` | ISO 9141 / KWP2000 slow init. Sends the ECU address (0x10) at 5bps before starting comms. Slower (~3 s). Needed for some older ECUs that do not respond to fast init. |
+| `carb` | CARB OBD-II functional init. For emission-compliance scanners. Not used for Nissan flash/dump. |
+
+If `nc` times out or returns no response, try switching from `fast` to `5baud`.
+
+---
+
+### `destaddr` and `addrtype` — module targeting
+
+`destaddr` is the KWP2000 destination address — the logical address of the ECU
+module you want to talk to. `addrtype` controls whether the packet is addressed
+to that one module (`phys`) or broadcast to all modules (`func`).
+
+**`addrtype phys` (physical):** packet targets only the module at `destaddr`.
+Used for flash, dump, security access, and everything nisprog does with Nissan
+ECUs. This is the correct mode for all flash/dump operations.
+
+**`addrtype func` (functional):** packet uses the ISO 14230 broadcast address
+(0x33) regardless of `destaddr`. All modules that support the requested service
+will respond. Used for OBD-II emission scan tools to discover which modules are
+present. Not suitable for flash/dump.
+
+**Known Nissan KWP2000 module addresses (K-line):**
+
+| Address | Module |
+|---------|--------|
+| `0x10` | ECM / PCM (powertrain — flash/dump target) |
+| `0x14` | TCM (automatic transmission) |
+| `0x15` | ABS / VDC |
+| `0x28` | BCM / body control |
+| `0x35` | SRS / airbag |
+
+> **Addresses vary by model year and market.** The table above covers common
+> mid-2000s Nissan/Infiniti K-line vehicles but is not universal. Use `diag
+> fastprobe 0x10 0x50` to scan a range of addresses and identify which modules
+> respond on your car.
+
+**Can I connect to SRS, ABS, or other modules?**
+
+Yes — for diagnostic reads only. Change `destaddr` to the module address, keep
+`addrtype phys`, and use `diag sr` to send KWP2000 requests (DTCs, live data).
+
+```
+set destaddr 0x35    # SRS/airbag
+nc
+diag sr 0x18 0x02 0xFF 0x00    # read stored DTCs
+```
+
+**You cannot flash or dump non-ECM modules with nisprog.** The flash kernel
+(`npkern`) only runs in ECM RAM. Flash operations (`flrom`, `flblock`) and
+ROM dump (`dm`) only apply to the powertrain ECM (`destaddr 0x10`).
+
+---
+
+### `speed` — baud rate
+
+Serial port baud rate for K-line comms. The default (10400 bps for K-line
+protocol) is set automatically. Only change this when reconnecting to an
+already-running kernel after a crash:
+
+```
+set speed 62500    # kernel comms speed
+nc
+initk
+```
+
+---
+
+### `show` — display current settings
+
+`set show` prints all current connection settings and adapter state. Run it
+after loading an ini file to confirm everything is set correctly before `nc`.
 
 ---
 
@@ -132,7 +279,7 @@ command is needed. The ECUID string is also used internally by `gk`.
 | `setkeys <s27k> <s36k>` | Set security keys manually (32-bit hex each). Use when `gk` fails or re-supplying keys after a session restart. |
 | `setdev <device>` | Set flash device type. Valid values: `7051` (256 KB), `7055` (512 KB), `7058` (1 MB). **Must be set before any dump or flash.** |
 | `writevin <vin>` | Write VIN string to ECU EEPROM. |
-| `watch <addr>` | Continuously display 4 bytes at ROM/RAM address `<addr>`. |
+| `watch <addr>` | Continuously poll and display 4 bytes at ROM/RAM address `<addr>`. Press Enter to stop. Uses SID 0xAC (ReadMemoryByAddress) before kernel, or kernel RMBA after. |
 
 ---
 
@@ -276,6 +423,93 @@ comms issues.
 | `debug l0 <val>` | Set Layer 0 (driver) debug level. |
 | `debug all <val>` | Set all layers to the same debug level. |
 | `debug show` | Print current debug levels for all layers. |
+
+---
+
+## `watch` — when and why
+
+`watch <addr>` polls 4 bytes at a ROM or RAM address repeatedly until you press
+Enter, printing the value each loop. Before the kernel is loaded it uses KWP2000
+SID 0xAC (ReadMemoryByAddress). After `runkernel` it uses the faster kernel RMBA
+protocol.
+
+**Use cases:**
+
+- **Monitor a RAM flag or counter live.** For example, watch a knock counter
+  address while revving the engine to see when and how much knock is detected.
+- **Verify a cal table value is being read from the address you expect.** Load
+  the kernel, watch the address, change operating conditions — if the value
+  changes, you've found the right live RAM location.
+- **BBRAM / self-learn monitoring.** Watch LTFT, STFT, idle relearn values, or
+  VVT learning flags update during an idle relearn cycle.
+- **Debug a patch.** After flashing a changed table, watch the RAM mirror of
+  that table to confirm the ECU is actually using the new values.
+
+```
+# Example: watch 4 bytes at RAM address (kernel must be running for fast polls)
+runkernel D:\...\npk_SH7055_35.bin
+watch 0xFFFF6000
+```
+
+---
+
+## Workflow ini Files
+
+Save these alongside `nisprog.exe` for one-command session setup.
+
+### `nisprog_dump.ini` — ROM backup
+
+```ini
+# nisprog_dump.ini
+# Sets up connection and dumps the full ROM.
+# Edit COM port and kernel path for your setup.
+set
+port \\.\COM19
+interface DUMB
+dumbopts 0x48
+l2protocol iso14230
+initmode fast
+testerid 0xfc
+destaddr 0x10
+addrtype phys
+up
+nc
+# gk runs here — record the s27k/s36k printed in the output
+gk
+setdev 7055
+runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+dm backup.bin 0 0
+stopkernel
+npdisc
+```
+
+### `nisprog_flash.ini` — ROM flash
+
+```ini
+# nisprog_flash.ini
+# Verifies and flashes a patched ROM.
+# Run after editing: change COM port, kernel path, setkeys values, and ROM filename.
+set
+port \\.\COM19
+interface DUMB
+dumbopts 0x48
+l2protocol iso14230
+initmode fast
+testerid 0xfc
+destaddr 0x10
+addrtype phys
+up
+nc
+setkeys 0xXXXXXXXX 0xXXXXXXXX    # replace with values from gk output
+setdev 7055
+runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+flverif patched_rom.bin
+flrom patched_rom.bin
+stopkernel
+npdisc
+```
+
+> Run via: `nisprog nisprog_dump.ini` or `nisprog nisprog_flash.ini`
 
 ---
 
