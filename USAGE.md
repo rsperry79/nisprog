@@ -175,12 +175,15 @@ Dump without kernel is slow. Run `runkernel` first.
 ```ini
 # nisprog_dump.ini — full ROM dump
 # Edit COM port and kernel path before use.
+# Recommended: connect a battery tender/charger before starting — a dump takes
+# ~10 minutes and a low-voltage dropout mid-session will corrupt the kernel state.
 # Run: nisprog nisprog_dump.ini
 
 set                      # enter set submenu (no "set" prefix on lines below)
 port \\.\COM19           # serial port — Windows COM port for K-line adapter
 interface DUMB           # driver — DUMB for any simple K-line cable
-dumbopts 0x48            # 0x08 MAN_BREAK + 0x40 BLOCKDUPLEX — correct for USB adapters
+dumbopts 0x68            # MEC07 confirmed: MAN_BREAK + BLOCKDUPLEX + FAST_BREAK
+l1protocol ISO14230      # set both l1 AND l2 explicitly for MEC07
 l2protocol iso14230      # KWP2000 framing — required for all Nissan ECU commands
 initmode fast            # ISO 14230 fast init — correct for MEC07
 testerid 0xfc            # source address in K-line frames
@@ -206,15 +209,18 @@ npdisc                   # disconnect from K-line
 ```ini
 # nisprog_flash.ini — ROM verification and flash
 # BEFORE USE:
-#   1. Edit COM port and kernel path
-#   2. Replace setkeys values with s27k/s36k from your gk run
-#   3. Replace patched_rom.bin with your ROM filename
-#   4. Run: nisprog nisprog_flash.ini
+#   1. Connect a battery charger — flashing REQUIRES stable voltage (>12.5V).
+#      A dropout mid-flash leaves the ECU in a partially written state.
+#   2. Edit COM port and kernel path
+#   3. Replace setkeys values with s27k/s36k from your gk run
+#   4. Replace patched_rom.bin with your ROM filename
+#   5. Run: nisprog nisprog_flash.ini
 
 set                      # enter set submenu
 port \\.\COM19           # serial port
 interface DUMB           # adapter driver
-dumbopts 0x48            # USB adapter flags
+dumbopts 0x68            # MEC07 confirmed: MAN_BREAK + BLOCKDUPLEX + FAST_BREAK
+l1protocol ISO14230      # set both l1 AND l2 explicitly for MEC07
 l2protocol iso14230      # KWP2000 — required for Nissan
 initmode fast            # fast init for MEC07
 testerid 0xfc            # tester source address
