@@ -21,11 +21,11 @@ Minimum pins to power the ECU and establish K-line communication off the vehicle
 
 K-line adapter connects to Pin 14 (A14). All nisprog operations go through this line.
 
-**NATS (2001+ Xterra and other models):** Some ECUs require a NATS transponder
-confirm signal before allowing injection. On bench, the ECU will connect via
-K-line but will not inject (and may behave erratically) without the NATS confirm.
-Either loop the NATS confirm wire or use the NATS unit from the same vehicle.
-The 2000 Xterra VG33E (MEC07-370C1 Cal ID `1Q6MAZNV`) has no NATS.
+**Immobilizer (NATS and equivalents):** Some ECUs require an immobilizer confirm
+signal before allowing injection. On bench, the ECU will connect via K-line but
+will not inject (and may behave erratically) without the confirm. Either loop the
+confirm wire or use the immobilizer unit from the same vehicle. Check the FSM
+wiring diagram for your ECU to determine if an immobilizer is present.
 
 ---
 
