@@ -43,7 +43,7 @@ a 512 KB ROM via K-line at 10400 baud.
 nc
 gk
 setdev 7055
-runkernel D:\...\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 dm rom_original.bin 0 0           # full dump — length 0 means "full ROM size"
 # or with explicit byte count:
 dm rom_original.bin 0 524288      # same result, 512 KB = 0x80000 bytes
@@ -72,7 +72,7 @@ Nissan proprietary). After `runkernel` it uses the faster kernel RMBA protocol.
 **Monitor a RAM variable live:**
 ```
 # Watch a suspected knock counter or status flag at 0xFFFF6000
-runkernel D:\...\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 watch 0xFFFF6000
 # Rev the engine and observe the value change
 ```

@@ -115,7 +115,7 @@ gk
 #   SID27 key = 432EF55B   SID36 key = 27CD3964
 # Copy these to a file or your session notes.
 setdev 7055
-runkernel D:\...\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 dm backup.bin 0 0
 stopkernel
 npdisc
@@ -127,7 +127,7 @@ Then in a later flash session, skip `gk` and supply the keys directly:
 nc
 setkeys 0x432EF55B 0x27CD3964
 setdev 7055
-runkernel D:\...\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 flverif patched_rom.bin
 flrom patched_rom.bin
 stopkernel

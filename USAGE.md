@@ -199,7 +199,7 @@ gk                       # guess security key — RECORD the s27k/s36k printed h
 setdev 7055              # set flash device type (7051/7055/7058 — must match ECU)
 
 # Load flash kernel for fast dump (kernel stays in RAM, does not modify flash)
-runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 
 dm backup.bin 0 0        # dump entire ROM to backup.bin (size from setdev)
 
@@ -234,7 +234,7 @@ up                       # exit submenu, bring link up
 nc                       # connect — confirms communication before proceeding
 setkeys 0xXXXXXXXX 0xXXXXXXXX  # supply keys from prior gk run (s27k then s36k)
 setdev 7055              # flash device type — must match ECU
-runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 
 flverif patched_rom.bin  # dry run — lists changed blocks without writing anything
 flrom patched_rom.bin    # flash — prompts for confirmation per block
@@ -265,7 +265,7 @@ gk                             # record s27k/s36k
 setdev 7055
 
 # 3. Kernel
-runkernel D:\...\npk_SH7055_35.bin
+runkernel npkern\npk_SH7055_35.bin
 
 # 4. Dump (backup)
 dm backup.bin 0 0
