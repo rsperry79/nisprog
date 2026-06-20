@@ -82,13 +82,18 @@ to any command):
    state is whatever it was when the kernel last ran.
 
 After a power cycle the ECU boots from flash. If an interrupted flash left
-blocks in an inconsistent state, the ECU may not boot normally. In this case:
+blocks in an inconsistent state, the ECU may not boot normally.
 
-- If the boot ROM / recovery sectors are intact, bench-flashing via JTAG or
-  a direct SPI flash programmer may be required.
-- For MEC07 ECUs, the factory boot sector (0x00000–0x0FFFF) is never touched
-  by nisprog's selective flash — this means the ECU can generally be recovered
-  by reflashing the cal/code sectors while the boot sector holds.
+**SH7055 F-ZTAT hardware recovery (board-level):** The SH7055 has a hardware
+boot ROM burned into silicon. Pulling the MD pins (JP1/JP2 on PCB) low at
+power-on puts the chip into a factory serial programming mode — it accepts a
+reflash program over the SCI serial interface and can recover from a completely
+blank or corrupted flash state. This requires opening the ECU enclosure.
+
+nisprog's selective flash never writes Block 0 (reset vectors and boot code)
+unless `f` (flash all) is confirmed — so a crash during a normal cal/code
+flash typically leaves the boot sector intact and the F-ZTAT path may not be
+needed.
 
 ---
 
@@ -146,5 +151,6 @@ stopkernel                # when fully done — resets ECU
 - Run `nisrom --fix <rom>` on any patched ROM before flashing to verify and
   correct checksums. A ROM with wrong checksums may cause ECU misbehaviour
   even after a successful flash.
-- Keep a battery charger on the car during any flash or long dump session.
+- Never flash below 12.5V — keep a battery charger on the car throughout.
+- Keep the K-line cable connected throughout `flrom` — do not unplug.
 - Save `gk` output before starting — needed for reconnect without re-running `gk`.
