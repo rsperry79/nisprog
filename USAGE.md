@@ -123,7 +123,7 @@ Use `set show` to display all current values including L0-layer adapter settings
 |---------|-------------|
 | `gk` | Guess security access key for this ECU (brute-force from known keyset DB) |
 | `setkeys <s27k> <s36k>` | Manually set security keys if `gk` fails (32-bit hex each) |
-| `setdev <device>` | Set ECU/flash device type. Options: `7051`, `7055_18`, `7055_35`, `7058` |
+| `setdev <device>` | Set ECU/flash device type. Options: `7051`, `7055`, `7058` |
 
 **Example:**
 
@@ -163,13 +163,28 @@ dm partial.bin 0x10000 0x1000
 | `kspeed <baud>` | Set kernel comms baud rate (default 62500) |
 | `npconf <param> <val>` | Tune protocol timing parameters (see `npconf ?`) |
 
-**Example:**
+**Kernel file selection — Nissan (`runkernel`):**
+
+| `setdev` | ROM size | Kernel file | Flash cell | ECU examples |
+|----------|----------|-------------|------------|--------------|
+| `7051` | 256 KB | `npk_SH7051.bin` | SH7051 | Older Nissan ECUs |
+| `7055` | 512 KB | `npk_SH7055_35.bin` | 350 nm | MEC07-370, MEC07-390 (VG33/VG33ER); most mid-2000s Nissan SH7055 ECUs |
+| `7055` | 512 KB | `npk_SH7055_18.bin` | 180 nm (SH7055S) | Some newer SH7055S-based Nissan ECUs |
+| `7058` | 1 MB | `npk_SH7058.bin` | 180 nm | Newer Nissan ECUs (SH7058) |
+
+**Subaru (`sprunkernel`):** use `ssmk_SH7055_18.bin` (SH7055S) or `ssmk_SH7058.bin` (SH7058) with `ssmprog.ini`.
+
+> **How to pick 350 nm vs 180 nm for `setdev 7055`:** the flash cell variant is a hardware property of
+> the SH7055 die, not visible in the ROM file itself. MEC07 ECUs (Nissan VG33/VG33ER) use the 350 nm
+> cell — use `npk_SH7055_35.bin`. If the kernel uploads but hangs on the first dump, try the other
+> variant. Using the wrong kernel risks corrupting the flash write step — always do a test dump before
+> any flash operation.
+
+**Example (MEC07):**
 
 ```
 runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
 ```
-
-Pick the `.bin` matching your ECU's CPU (see npkern USAGE.md).
 
 ---
 
