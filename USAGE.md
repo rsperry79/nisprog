@@ -290,9 +290,15 @@ The kernel keeps running in ECU RAM even after nisprog exits.
   wrong device type (`7051` vs `7055_18` vs `7055_35` vs `7058`) will cause
   incorrect ROM size assumptions and potentially corrupt a flash.
 
-- **`gk` (guess key)** uses a bundled database of known Nissan keysets. If it
-  fails, the ECU variant is not in the DB — use `setkeys` with known values.
-  Keys are derived from ECUID; nissutils `keyset_lookup.py` can look them up.
+- **Always run `gk` before a dump and record the key it finds.** Security
+  access is required for both dump and flash operations. `gk` prints the
+  discovered s27k / s36k pair — save these values. On some ECU variants the
+  key is not cached between sessions, so you must re-supply it with `setkeys
+  <s27k> <s36k>` before flash operations (`flverif`, `flblock`, `flrom`) will
+  succeed. If you skip `gk` or lose its output, the write will fail with a
+  security-access rejection that can look like a comms error. If `gk` fails
+  (ECU not in the keyset DB), use `setkeys` with values from nissutils
+  `keyset_lookup.py`.
 
 - **`flverif` dry-run always reports write errors** — this is expected; it does
   not flash anything. Run it to preview which blocks will change before `flrom`.
