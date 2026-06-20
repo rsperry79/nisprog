@@ -99,7 +99,7 @@ again with a fresh connection to try the full brute-force search.
 | Reconnecting in the same session after `nc` | Keys are still cached — no action needed |
 | Reconnecting in a new session with known s27k | `setkeys <s27k>` — looks up s36k from DB |
 | Reconnecting with both keys known | `setkeys <s27k> <s36k>` — fastest, no DB lookup |
-| `gk` fails (unknown ECU) | Use `nissutils keyset_lookup.py --s27k <value>` to look up, then `setkeys` both |
+| `gk` fails (unknown ECU) | Find keys via community sources, then `setkeys <s27k> <s36k>` |
 | Crash recovery — kernel still running | Must re-supply keys before any flash; use `setkeys` |
 
 ---
@@ -152,12 +152,10 @@ npdisc
 
 ## Finding keys outside nisprog
 
-If `gk` fails, the key pair for a given ECU can often be found via:
+If `gk` fails, the ECU variant is not in nisprog's bundled keyset DB. Options:
 
-```powershell
-python ECU-Toolkit/tools/keyset_lookup.py --s27k 432EF55B
-```
-
-This queries the nissutils ROM DB for matching keysets. If found, use both
-values in `setkeys`. If not found, the ECU variant is not in any known DB
-and the keys must be derived through other means (hardware-level extraction).
+- Check community sources (nissutils ROM DB, romraider forums) for the ECUID prefix.
+- If the s27k is known from a community source, `setkeys <s27k>` will attempt to
+  resolve the s36k from the bundled DB. If that also fails, both values must be supplied.
+- If no keyset exists anywhere, the keys must be derived through other means
+  (hardware-level extraction or seed/key algorithm analysis).
