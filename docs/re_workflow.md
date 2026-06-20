@@ -34,6 +34,11 @@ The 2000 Xterra VG33E (MEC07-370C1 Cal ID `1Q6MAZNV`) has no NATS.
 A full dump is the starting point for any RE session. Plan for ~10 minutes for
 a 512 KB ROM via K-line at 10400 baud.
 
+> **If a dump runs for more than ~1 hour**, stop it and check `setdev`. Reading
+> past the actual ROM size causes nisprog to round-robin and become extremely
+> slow. `setdev 7055` = 512 KB, `setdev 7051` = 256 KB, `setdev 7058` = 1 MB —
+> the value must match your ECU or the dump length will be wrong.
+
 ```
 nc
 gk

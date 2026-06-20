@@ -177,6 +177,9 @@ Dump without kernel is slow. Run `runkernel` first.
 # Edit COM port and kernel path before use.
 # Recommended: connect a battery tender/charger before starting — a dump takes
 # ~10 minutes and a low-voltage dropout mid-session will corrupt the kernel state.
+# If the dump is taking more than ~1 hour, stop it and verify setdev matches your
+# ECU (7051=256KB, 7055=512KB, 7058=1MB). Reading past the actual ROM size causes
+# nisprog to round-robin and become extremely slow.
 # Run: nisprog nisprog_dump.ini
 
 set                      # enter set submenu (no "set" prefix on lines below)
