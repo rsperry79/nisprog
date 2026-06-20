@@ -38,7 +38,8 @@ commands are entered at the `nisprog>` prompt.
 ```
 set interface DUMB          # adapter driver (DUMB for any simple K-line cable)
 set port \\.\COM19          # Windows serial port — Linux: /dev/ttyUSB0
-set dumbopts 0x48           # adapter flags: 0x08 MAN_BREAK + 0x40 BLOCKDUPLEX
+set dumbopts 0x68           # MEC07 confirmed: MAN_BREAK + BLOCKDUPLEX + FAST_BREAK
+set l1protocol ISO14230     # set both l1 AND l2 explicitly for MEC07
 set l2protocol iso14230     # KWP2000 framing — required for all Nissan ECU commands
 set initmode fast           # ISO 14230 fast init — correct for Nissan MEC07
 set testerid 0xfc           # source address placed in K-line frame headers
@@ -62,7 +63,9 @@ subcommands without the `set` prefix — they run in the submenu context until
 set
 port \\.\COM19              # serial port — adjust COM number for your adapter
 interface DUMB              # DUMB = any simple K-line cable (not ELM327)
-dumbopts 0x48               # USB adapter flags: MAN_BREAK + BLOCKDUPLEX
+dumbopts 0x68               # MEC07 confirmed: MAN_BREAK + BLOCKDUPLEX + FAST_BREAK
+                            # (try 0x48 first if 0x68 fails on your adapter)
+l1protocol ISO14230         # set both l1 AND l2 explicitly for MEC07 — do not rely on auto-select
 l2protocol iso14230         # KWP2000 framing — required for Nissan
 initmode fast               # ISO 14230 fast init for MEC07
 testerid 0xfc               # tester source address (standard)
@@ -140,4 +143,142 @@ Dump without kernel is slow. Run `runkernel` first.
 
 | File | Cell | ECU examples |
 |------|------|--------------|
-| `npk_SH7051.bin` | SH705
+| `npk_SH7051.bin` | SH7051 | Older Nissan (`setdev 7051`) |
+| `npk_SH7055_35.bin` | 350 nm | MEC07-370/390 (VG33/VG33ER) — most mid-2000s Nissan |
+| `npk_SH7055_18.bin` | 180 nm | Some SH7055S-based Nissan |
+| `npk_SH7058.bin` | 180 nm | Newer Nissan (`setdev 7058`) |
+
+### Flash / verify
+
+| Command | Description |
+|---------|-------------|
+| `flverif <file>` | Compare ECU flash to file — lists changed blocks, no writes. |
+| `flrom <file> [orig]` | Flash ROM. Detects changed blocks by CRC. |
+| `flblock <file> <blockno> [Y]` | Flash one block. Add `Y` to skip confirmation. |
+
+> `flverif` / `flrom` / `flblock` require npkern running.
+
+### Diagnostics
+
+| Command | Description |
+|---------|-------------|
+| `watch <addr>` | Poll and display 4 bytes at address continuously. Enter to stop. See [docs/re_workflow.md](docs/re_workflow.md). |
+| `diag sr <byte...>` | Send raw KWP2000 bytes to ECU, print response. |
+| `debug <subcommand>` | K-line tracing and adapter tests. See [docs/debug.md](docs/debug.md). |
+
+---
+
+## Workflow INI Files
+
+### `nisprog_dump.ini`
+
+```ini
+# nisprog_dump.ini — full ROM dump
+# Edit COM port and kernel path before use.
+# Run: nisprog nisprog_dump.ini
+
+set                      # enter set submenu (no "set" prefix on lines below)
+port \\.\COM19           # serial port — Windows COM port for K-line adapter
+interface DUMB           # driver — DUMB for any simple K-line cable
+dumbopts 0x48            # 0x08 MAN_BREAK + 0x40 BLOCKDUPLEX — correct for USB adapters
+l2protocol iso14230      # KWP2000 framing — required for all Nissan ECU commands
+initmode fast            # ISO 14230 fast init — correct for MEC07
+testerid 0xfc            # source address in K-line frames
+destaddr 0x10            # destination — 0x10 = powertrain ECM
+addrtype phys            # physical addressing (target one module, not broadcast)
+up                       # exit set submenu and bring K-line link up
+
+nc                       # connect to ECU — prints ECUID on success
+gk                       # guess security key — RECORD the s27k/s36k printed here
+setdev 7055              # set flash device type (7051/7055/7058 — must match ECU)
+
+# Load flash kernel for fast dump (kernel stays in RAM, does not modify flash)
+runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+
+dm backup.bin 0 0        # dump entire ROM to backup.bin (size from setdev)
+
+stopkernel               # stop kernel — resets ECU (clears self-learn, DTCs)
+npdisc                   # disconnect from K-line
+```
+
+### `nisprog_flash.ini`
+
+```ini
+# nisprog_flash.ini — ROM verification and flash
+# BEFORE USE:
+#   1. Edit COM port and kernel path
+#   2. Replace setkeys values with s27k/s36k from your gk run
+#   3. Replace patched_rom.bin with your ROM filename
+#   4. Run: nisprog nisprog_flash.ini
+
+set                      # enter set submenu
+port \\.\COM19           # serial port
+interface DUMB           # adapter driver
+dumbopts 0x48            # USB adapter flags
+l2protocol iso14230      # KWP2000 — required for Nissan
+initmode fast            # fast init for MEC07
+testerid 0xfc            # tester source address
+destaddr 0x10            # ECM target address
+addrtype phys            # physical (single-module) addressing
+up                       # exit submenu, bring link up
+
+nc                       # connect — confirms communication before proceeding
+setkeys 0xXXXXXXXX 0xXXXXXXXX  # supply keys from prior gk run (s27k then s36k)
+setdev 7055              # flash device type — must match ECU
+runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
+
+flverif patched_rom.bin  # dry run — lists changed blocks without writing anything
+flrom patched_rom.bin    # flash — prompts for confirmation per block
+
+stopkernel               # reset ECU (exits kernel, starts ECU from flash)
+npdisc                   # disconnect
+```
+
+---
+
+## Typical Workflow (interactive)
+
+```
+# 1. Set up connection
+set interface DUMB
+set port \\.\COM19
+set dumbopts 0x48
+set l2protocol iso14230
+set initmode fast
+set testerid 0xfc
+set destaddr 0x10
+set addrtype phys
+up
+nc                             # ECUID printed here
+
+# 2. Security + device
+gk                             # record s27k/s36k
+setdev 7055
+
+# 3. Kernel
+runkernel D:\...\npk_SH7055_35.bin
+
+# 4. Dump (backup)
+dm backup.bin 0 0
+
+# 5. Verify patched ROM
+flverif patched_rom.bin
+
+# 6. Flash
+flrom patched_rom.bin
+
+# 7. Finish
+stopkernel
+npdisc
+quit
+```
+
+---
+
+## Quick notes
+
+- `nc` prints the ECUID automatically — no separate command needed.
+- `setdev` accepts `7051`, `7055`, `7058` only — `7055_18`/`7055_35` are kernel filenames.
+- `stopkernel` is a power cycle — self-learn (LTFT, idle, VVT, knock) is lost.
+- Spaces in file paths break `runkernel` — use paths with no spaces.
+- `ssmprog.ini` / `SubaruSIDs.txt` are for Subaru SSM only — not Nissan.

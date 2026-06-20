@@ -58,13 +58,14 @@ almost always correct.
 
 ## `l1protocol` — physical layer
 
-Selects hardware framing. For Nissan K-line work this is almost always
-auto-selected by the L2 protocol choice and does not need to be set explicitly.
+Selects hardware framing. For Nissan MEC07 (SH7055) ECUs, set this explicitly
+alongside `l2protocol` — relying on auto-selection has been observed to cause
+connection failures on some adapters.
 
 | Value | Description |
 |-------|-------------|
 | `ISO9141` | ISO 9141 physical framing (UART at 10400 bps, 5-baud wake-up). Older ECUs. |
-| `ISO14230` | KWP2000 physical framing. **Correct for Nissan MEC07 K-line.** Auto-selected when `l2protocol iso14230` is set. |
+| `ISO14230` | KWP2000 physical framing. **Set this explicitly for Nissan MEC07 K-line.** |
 | `J1850-VPW` | SAE J1850 Variable Pulse Width. Pre-2003 GM/Chrysler. Not Nissan. |
 | `J1850-PWM` | SAE J1850 Pulse Width Modulation. Pre-2003 Ford. Not Nissan. |
 | `CAN` | ISO 15765 CAN. Not used by nisprog (K-line only tool). |

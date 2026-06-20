@@ -6,16 +6,42 @@ and EEPROM access. None of these modify the ECU.
 
 ---
 
+## Bench wiring (NS-H11B 112-pin connector)
+
+Minimum pins to power the ECU and establish K-line communication off the vehicle:
+
+| Pin | Function |
+|-----|----------|
+| 38 (A38) | Battery +12V constant |
+| 47 (B7) | Ignition +12V — bridge to +12V to simulate key-on |
+| 60 (B20) | ECU Ground |
+| 109 (C29) | ECU Ground |
+| 116 (C36) | Sensor Ground — required for sensor inputs |
+| **14 (A14)** | **K-Line (Consult/OBD) — connect your K-line adapter here** |
+
+K-line adapter connects to Pin 14 (A14). All nisprog operations go through this line.
+
+**NATS (2001+ Xterra and other models):** Some ECUs require a NATS transponder
+confirm signal before allowing injection. On bench, the ECU will connect via
+K-line but will not inject (and may behave erratically) without the NATS confirm.
+Either loop the NATS confirm wire or use the NATS unit from the same vehicle.
+The 2000 Xterra VG33E (MEC07-370C1 Cal ID `1Q6MAZNV`) has no NATS.
+
+---
+
 ## ROM dump for offline analysis
 
-A full dump is the starting point for any RE session:
+A full dump is the starting point for any RE session. Plan for ~10 minutes for
+a 512 KB ROM via K-line at 10400 baud.
 
 ```
 nc
 gk
 setdev 7055
 runkernel D:\...\npk_SH7055_35.bin
-dm rom_original.bin 0 0      # full 512 KB dump
+dm rom_original.bin 0 0           # full dump — length 0 means "full ROM size"
+# or with explicit byte count:
+dm rom_original.bin 0 524288      # same result, 512 KB = 0x80000 bytes
 ```
 
 Then load `rom_original.bin` into Ghidra for static analysis.
@@ -187,3 +213,22 @@ diff <(xxd backup.bin) <(xxd post_flash.bin)   # Linux
 
 Or use `flverif` within nisprog — it reports which 64-byte blocks differ
 without requiring an external diff tool.
+
+## `flrom` with original ROM reference
+
+`flrom new.bin backup.bin` takes an optional second argument — the original
+(pre-patch) ROM. When supplied, nisprog determines which blocks to write by
+comparing `new.bin` against `backup.bin` (the original), rather than comparing
+`new.bin` against the current ECU flash content.
+
+```
+# Standard form — compares new ROM against current ECU flash:
+flrom patched.bin
+
+# Reference form — compares new ROM against your known-good original:
+flrom patched.bin backup.bin
+```
+
+Use the reference form when the ECU flash state is uncertain (e.g. after a
+partial flash) — it guarantees you're applying exactly the diff between your
+known-good dump and your new ROM, regardless of what's currently on the chip.
