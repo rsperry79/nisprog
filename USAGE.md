@@ -8,7 +8,7 @@ and reflash ECUs — including selective block flashing to minimise flash
 wear. It runs as an interactive CLI and uses freediag for K-line
 communications and npkern SH2 kernels for fast flash operations.
 
-**Supported ECU families:** SH7051, SH7055 (1.8 MB and 3.5 MB variants),
+**Supported ECU families:** SH7051, SH7055 (180 nm and 350 nm variants),
 SH7058. Set with `setdev` before flashing.
 
 ---
@@ -54,6 +54,10 @@ up
 nc
 ```
 
+`nc` automatically retrieves and prints the ECUID (e.g. `ECUID: MEC07-370 C1`)
+via KWP2000 SID 0x1A. There is no separate "get ECUID" command — it is always
+printed on connect. The ECUID is also used by `gk` for keyset lookup.
+
 ### In nisprog.ini (config file)
 
 The ini file is fed line-by-line through the same CLI parser. `set` on its
@@ -98,8 +102,7 @@ All of these take effect immediately and are saved for the current session.
 | `destaddr <hex>` | `0x10` | ECU destination address. `0x10` for Nissan powertrain ECUs. |
 | `addrtype <type>` | `phys`, `func` | Physical addressing targets one ECU; functional broadcasts. Use `phys`. |
 | `speed <baud>` | `62500` | Comms baud rate. Only change for kernel reconnect after crash (see below). |
-
-Use `set show` to display all current values including L0-layer adapter settings.
+| `show` | — | Print all current settings. |
 
 ---
 
@@ -111,45 +114,45 @@ Use `set show` to display all current values including L0-layer adapter settings
 |---------|-------------|
 | `set` | Enter connection settings submenu (interactive), or `set <key> <val>` inline |
 | `up` | Bring K-line link up |
-| `nc` | Connect to ECU (start diagnostic session) |
-| `npdisc` | Disconnect from ECU |
-| `quit` | Exit nisprog |
+| `nc` / `npconn` | Connect to Nissan ECU. Prints ECUID on success. |
+| `npdisc` / `nd` | Disconnect from ECU (does not reset if kernel is running) |
+| `source <file>` | Execute commands from a file (batch mode) |
+| `quit` / `exit` | Exit nisprog |
 
 ---
 
 ### ECU identification
 
+`nc` automatically retrieves and displays the ECUID on connect. No separate
+command is needed. The ECUID string is also used internally by `gk`.
+
 | Command | Description |
 |---------|-------------|
-| `gk` | Guess security access key for this ECU (brute-force from known keyset DB) |
-| `setkeys <s27k> <s36k>` | Manually set security keys if `gk` fails (32-bit hex each) |
-| `setdev <device>` | Set ECU/flash device type. Options: `7051`, `7055`, `7058` |
-
-**Example:**
-
-```
-nc
-gk
-setdev 7055
-```
+| `gk` | Guess security access key from bundled keyset DB (uses ECUID). Prints s27k / s36k on success. |
+| `setkeys <s27k> <s36k>` | Set security keys manually (32-bit hex each). Use when `gk` fails or re-supplying keys after a session restart. |
+| `setdev <device>` | Set flash device type. Valid values: `7051` (256 KB), `7055` (512 KB), `7058` (1 MB). **Must be set before any dump or flash.** |
+| `writevin <vin>` | Write VIN string to ECU EEPROM. |
+| `watch <addr>` | Continuously display 4 bytes at ROM/RAM address `<addr>`. |
 
 ---
 
 ### ROM dump
 
-| Command / Alias | Description |
-|-----------------|-------------|
-| `dumpmem <file> <start> <len>` | Dump `<len>` bytes from address `<start>` to `<file>` |
-| `dm <file> <start> <len>` | Shorthand for `dumpmem` |
-| `dm <file> 0 0` | Dump entire ROM (size from `setdev`) |
+| Command | Description |
+|---------|-------------|
+| `dm <file> <start> <len>` | Dump `<len>` bytes from address `<start>` to `<file>`. |
+| `dm <file> 0 0` | Dump entire ROM (size determined by `setdev`). |
+| `dumpmem <file> <start> <len>` | Same as `dm` (long form). |
+| `dm <file> <start> <len> eep` | Dump from EEPROM address space instead of ROM. Requires `npconf eepr` to be set first. |
 
-Dump is slow without npkern. Run `runkernel` first for fast mode.
+Dump without a running kernel is slow (direct K-line). Run `runkernel` first for fast mode.
 
 **Examples:**
 
 ```
 dm full_dump.bin 0 0
 dm partial.bin 0x10000 0x1000
+dm eeprom.bin 0 512 eep
 ```
 
 ---
@@ -158,10 +161,21 @@ dm partial.bin 0x10000 0x1000
 
 | Command | Description |
 |---------|-------------|
-| `runkernel <path_to_kernel.bin>` | Upload and start SH2 npkern in ECU RAM |
-| `stopkernel` | Stop kernel and restart ECU (equivalent to power cycle) |
-| `kspeed <baud>` | Set kernel comms baud rate (default 62500) |
-| `npconf <param> <val>` | Tune protocol timing parameters (see `npconf ?`) |
+| `runkernel <file>` | Upload and start SH2 npkern in ECU RAM (Nissan). |
+| `sprunkernel <file>` | Upload and start SSM kernel in ECU RAM (Subaru). |
+| `initk` | Re-initialise an already-running kernel (after reconnect, without reuploading). |
+| `stopkernel` | Stop kernel and restart ECU (equivalent to power cycle). |
+| `kspeed <baud>` | Change kernel comms baud rate (default 62500). Valid: 62500, 31250, 25000. |
+| `npconf <param> <val>` | Tune timing/protocol parameters. Use `npconf ?` to list all. |
+
+**npconf parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `p3` | 5 ms | Delay before new request (ISO P3 timing) |
+| `rxe` | 20 ms | Read timeout offset — increase to fix timeout errors on slow adapters |
+| `eepr` | 0 | Address of `eeprom_read()` function in ROM — required for EEPROM dump |
+| `kspeed` | 62500 | Kernel baud rate used by `initk` |
 
 **Kernel file selection — Nissan (`runkernel`):**
 
@@ -192,9 +206,9 @@ runkernel D:\ECU-Toolkit\dist\windows\nisprog\npkern\npk_SH7055_35.bin
 
 | Command | Description |
 |---------|-------------|
-| `flverif <file>` | Compare ECU flash contents to `<file>`, report differences |
-| `flblock <block> <file>` | Flash a single erase block from `<file>` |
-| `flrom <file>` | Flash entire ROM from `<file>`, with selective block detection |
+| `flverif <file>` | Compare ECU flash contents against `<file>`, report differing blocks. |
+| `flrom <file> [orig_rom]` | Flash entire ROM from `<file>`. Detects changed blocks by CRC. If `orig_rom` is given, uses it to determine which blocks to flash instead. |
+| `flblock <file> <blockno> [Y]` | Flash a single erase block `<blockno>` from `<file>`. Add `Y` to skip confirmation. |
 
 **flrom workflow:**
 
@@ -215,12 +229,53 @@ stopkernel
 
 ---
 
-### Debug
+### Raw diagnostic requests (`diag`)
+
+`diag` is a freediag submenu for sending raw ISO 14230 / KWP2000 requests
+directly to the ECU. Useful for reading data by identifier, custom SIDs,
+or verifying ECU responses at the protocol level.
 
 | Command | Description |
 |---------|-------------|
-| `debug l1 0x8c` | Enable byte-level hex trace of all K-line traffic |
-| `debug l1 0` | Disable debug output |
+| `diag sr <byte0> [byte1 ...]` | Send raw bytes to the ECU and print response (alias: `sendreq`). |
+| `diag read [timeout_s]` | Read ECU response without sending a request. |
+| `diag connect` | Low-level L2 connect (normally use `nc` instead). |
+| `diag disconnect` | Low-level L2 disconnect. |
+| `diag fastprobe [start [end [func]]]` | Scan K-line for ECUs using ISO 14230 fast init. |
+
+**Examples — Nissan KWP2000 SIDs:**
+
+```
+# Read ECU ID (SID 0x1A, local ID 0x81) — same as nc performs automatically
+diag sr 0x1A 0x81
+
+# Read data by local identifier (SID 0x21)
+diag sr 0x21 <local_id>
+
+# Read fault codes (SID 0x18 0x02 0xFF 0x00)
+diag sr 0x18 0x02 0xFF 0x00
+
+# Clear fault codes (SID 0x14 0xFF 0x00)
+diag sr 0x14 0xFF 0x00
+
+# Tester present / keep-alive
+diag sr 0x3E
+```
+
+---
+
+### Debug
+
+`debug` is a submenu for enabling verbose K-line tracing. Use to diagnose
+comms issues.
+
+| Command | Description |
+|---------|-------------|
+| `debug l1 <val>` | Set Layer 1 (physical/byte) debug level. `0x8c` = full hex trace; `0` = off. |
+| `debug l2 <val>` | Set Layer 2 (framing) debug level. |
+| `debug l0 <val>` | Set Layer 0 (driver) debug level. |
+| `debug all <val>` | Set all layers to the same debug level. |
+| `debug show` | Print current debug levels for all layers. |
 
 ---
 
@@ -237,16 +292,16 @@ set testerid 0xfc
 set destaddr 0x10
 set addrtype phys
 up
-nc
+nc                                   # nc prints ECUID on success
 
-# 2. Identify and unlock
-gk
-setdev 7055
+# 2. Identify, record key, and set device
+gk                                   # prints s27k/s36k — save these values
+setdev 7055                          # 512 KB ROM
 
 # 3. Start flash kernel
 runkernel D:\...\npkern\npk_SH7055_35.bin
 
-# 4. Dump ROM (optional backup)
+# 4. Dump ROM (backup — also verifies kernel is working)
 dm backup.bin 0 0
 
 # 5. Verify your patched ROM
@@ -268,14 +323,17 @@ quit
 If nisprog or your machine crashed while npkern was running:
 
 ```
-# Reconnect at kernel comms speed
+# Reconnect at kernel comms speed (do NOT reinitialise the bus — kernel is still running)
 set speed 62500
 nc
-kspeed 62500
+initk                                # re-initialises kernel comms without reuploading
 # Continue where you left off
 ```
 
-The kernel keeps running in ECU RAM even after nisprog exits.
+The kernel keeps running in ECU RAM even after nisprog exits as long as ECU power is maintained.
+
+If `initk` fails, the kernel may have crashed. Try a ROM dump first to verify comms before
+attempting any flash operation.
 
 ---
 
@@ -285,7 +343,11 @@ The kernel keeps running in ECU RAM even after nisprog exits.
 
 - nisprog is an **interactive CLI**, not a scriptable single-shot tool.
   Commands are entered sequentially at its prompt. Batch scripting requires
-  piping stdin.
+  piping stdin or using `source <file>`.
+
+- **ECUID is printed automatically by `nc`.** There is no separate "get ECUID"
+  command. The ECUID string (e.g. `MEC07-370 C1`) is retrieved via KWP2000
+  SID 0x1A on connect and is also used internally by `gk` for keyset matching.
 
 - **`set` prefix is required at the interactive prompt for all connection
   parameters.** `set l2protocol iso14230` is correct at `nisprog>`. The
@@ -301,9 +363,10 @@ The kernel keeps running in ECU RAM even after nisprog exits.
     all Nissan ECU commands (`nc`, `gk`, `runkernel`, `flrom`, etc.).
     nisprog will refuse to run ECU commands if L2 is not `iso14230`.
 
-- **`setdev` is mandatory before any flash or dump operation.** Choosing the
-  wrong device type (`7051` vs `7055_18` vs `7055_35` vs `7058`) will cause
-  incorrect ROM size assumptions and potentially corrupt a flash.
+- **`setdev` is mandatory before any flash or dump operation.** Valid values
+  are `7051`, `7055`, `7058`. The `7055_18` / `7055_35` notation appears in
+  kernel filenames but NOT in `setdev` — always use `setdev 7055` for SH7055
+  ECUs regardless of flash cell variant.
 
 - **Always run `gk` before a dump and record the key it finds.** Security
   access is required for both dump and flash operations. `gk` prints the
@@ -319,8 +382,8 @@ The kernel keeps running in ECU RAM even after nisprog exits.
   not flash anything. Run it to preview which blocks will change before `flrom`.
 
 - **Never power off the ECU during a flash.** If flash is interrupted, the ECU
-  may be unbootable. A running npkern session can be reconnected (see recovery
-  above) as long as power is maintained.
+  may be unbootable. A running npkern session can be reconnected with `initk`
+  (see recovery above) as long as power is maintained.
 
 - **`stopkernel` = power cycle.** DTCs, self-learn (LTFT/STFT, idle relearn,
   VVT), and knock learning are lost. Budget a drive cycle for relearning after
